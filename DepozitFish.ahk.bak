@@ -1,0 +1,384 @@
+﻿#NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
+; #Warn  ; Enable warnings to assist with detecting common errors.
+SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
+SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
+#SingleInstance,Force
+
+;*** Variabile Globale
+
+global radio := []
+readIniFileKeys("Radio","DepozitFishGui.ini",radio)
+
+global intervalSpin
+IniRead,intervalSpin,DepozitFishGui.ini,Edit,eSpin
+
+
+global soapta := A_WorkingDir . "\Depozit\soapta.png"
+global at := A_WorkingDir . "\Depozit\at.png"
+global ramaScris := A_WorkingDir . "\Depozit\rama.png"
+global procent := A_WorkingDir . "\Depozit\procent.png"
+global focScris := A_WorkingDir . "\Depozit\foc.png"
+global plic := A_WorkingDir . "\Depozit\plic.png"
+global slot1 := A_WorkingDir . "\Depozit\1slot.png"
+global slot2 := A_WorkingDir . "\Depozit\2slot.png"
+global inchide := A_WorkingDir . "\Depozit\inchide.png"
+
+global rez := []
+createCoordRez(rez)
+
+;*** GUI
+Gui,Font,s10
+
+Gui, Add, Text,x120 y20 c0xc90606, Rezolutie
+
+Gui, Add, Radio,x60 y+5 group vradRez1920 grez,1920 x 1080
+Gui, Add, Radio,x+20 vradRez1366 grez,1366 x 768
+
+initControlStatus(radio,"Radio")
+
+Gui, Add, Text,x10 y+10 c0xc98036,Inrerval de timp pt Spin (in secunde)
+Gui, Add, Edit,x+20 w42 h18 number limit5 veSpin geditNumber,%intervalSpin%
+
+Gui, Add, Button,x20 y100 h40 w70 ghelp,Help
+Gui, Add, Button,x+120 h40 w70 gapply,Apply
+
+Gui, Show, w300 h150 ,FishBot Depozit Alfa
+
+;Etichete
+
+rez:
+	Gui,Submit,NoHide
+	writeControlStatus(radRez1920,"DepozitFishGui.ini","Radio","radRez1920")
+	writeControlStatus(radRez1366,"DepozitFishGui.ini","Radio","radRez1366")
+	switch A_GuiControl{
+		case "radRez1920":
+			writeCoordRez("chat",0,0,426,323)
+			writeCoordRez("plic",1844,304,1880,335)
+			writeCoordRez("inventar",1732,671,1916,1016)
+			writeCoordRez("da",827,511,1070,582)
+			writeCoordRez("offsetDropItm",300,5)
+		case "radRez1366":
+			writeCoordRez("chat",0,0,420,321)
+			writeCoordRez("plic",1288,212,1332,251)
+			writeCoordRez("inventar",1188,355,1365,705)
+			writeCoordRez("da",582,376,689,426)
+			writeCoordRez("offsetDropItm",300,5)
+	}
+return
+
+editNumber:
+	Gui,Submit,NoHide
+	writeControlStatus(%A_GuiControl%,"DepozitFishGui.ini","Edit",A_GuiControl)
+return
+
+help:
+return
+
+apply:
+	Reload
+return
+
+GuiClose:
+	ExitApp
+return
+
+F5::
+	initSpin()
+	miscare:=0
+	transIntervalSpin := intervalSpin * 50	;50 ~= 1 secunda
+	loop{
+		if(miscare > transIntervalSpin){
+			spin()
+			miscare := 0
+		}
+
+		if(asteaptaPlic()){
+			num := readChatNumber()
+			type := returnItemType()
+			inchideChat()
+			if(type = "nedeterminat")
+				continue
+			dropType(num,type)
+		}
+		miscare++
+	}
+
+return
+
+F6::Reload
+F7::ExitApp
+F8::
+	sendString("%rama^@123~%foc^@5123")
+return
+
+;***Clase
+Class Numar{
+	x := 0
+	num := 0
+	__New(poz,numar){
+		this.x := poz
+		this.num := numar
+	}
+}
+
+;***Functii
+sendString(string){
+	index := 1
+	lenght := StrLen(string)
+	while(index <= lenght){
+		char := SubStr(string,index,1)
+		if(char = "^")
+			char := "Space"
+		else if(char = "~")
+			char := "Enter"
+		sen(char)
+		index++
+	}
+}
+sen(key){
+	Send, {%key% down}
+	Sleep, 200
+	Send, {%key% up}
+}
+createCoordRez(array){ ;extrage numele din section si variabilele din Rez.ini ex rez[section][1]
+	temp:=[]
+	varName:="NULL"
+	index:=5
+	loop{
+		FileReadLine, string, DepozitFishRez.ini, %A_Index%
+			if(InStr(string,"[")){
+				array[varName]:=temp.Clone()
+				temp.Delete(1,index-1)
+				string:=LTrim(string,"[")
+				string:=RTrim(string,"]")
+				varName:=string
+				index:=1
+				continue
+			}
+		if(ErrorLevel = 1){
+			array[varName]:=temp.Clone()
+			temp.Delete(1,index-1)
+			return
+		}
+
+		eqPos := InStr(string,"=")
+		string := SubStr(string,eqPos+1)
+
+		temp[index]:=string
+		index++
+	}
+}
+readChatNumber(){
+	numberArray := []
+	index := 0
+	ImageSearch, xAt, yAt, % rez["chat"][1], % rez["chat"][2], % rez["chat"][3], % rez["chat"][4], *5 *TransBlack %at%
+	xEnd := xAt + 150
+	yEnd := yAt + 10
+	while(index <= 9){
+		stringNumber := A_WorkingDir . "\Depozit\" . index . ".png"
+		ImageSearch, x, y, % xAt + 1, % yAt, % xEnd, % yEnd, *5 *TransBlack %stringNumber%
+		while(ErrorLevel = 0){
+			numberArray.push(New Numar(x,index))
+			ImageSearch, x, y, % x + 1, % y, % xEnd, % yEnd, *5 *TransBlack %stringNumber%
+		}
+		index++
+	}
+	bubbleSortCresc(numberArray)
+	numarRezultat := 0
+	for index, element in numberArray{
+		numarRezultat := numarRezultat * 10 + element.num
+	}
+	return numarRezultat
+
+}
+bubbleSortCresc(array){
+	index := 1
+	ok := 0
+	while(index <= array.Count() - 1){
+		if(array[index].x > array[index + 1].x){
+			aux := array[index]
+			array[index] := array[index + 1]
+			array[index + 1] := aux
+			ok = 1
+		}
+		index++
+	}
+	while(ok = 1){
+		ok := 0
+		index := 1
+		while(index <= array.Count() - 1){
+		if(array[index].x > array[index + 1].x){
+			aux := array[index]
+			array[index] := array[index + 1]
+			array[index + 1] := aux
+			ok = 1
+		}
+		index++
+	}
+	}
+}
+asteaptaPlic(){
+	ImageSearch, x, y, % rez["plic"][1], % rez["plic"][2], % rez["plic"][3], % rez["plic"][4], *5 %plic%
+	if(ErrorLevel = 0){
+		MouseMove,x,y
+		Sleep,200
+		Click,1
+		Sleep,200
+		return true
+	}
+
+	return false
+}
+returnItemType(){
+	ImageSearch, xProcent, yProcent, % rez["chat"][1], % rez["chat"][2], % rez["chat"][3], % rez["chat"][4], *5 *TransBlack %procent%
+	xEnd := xProcent + 150
+	yEnd := yProcent + 10
+	ImageSearch, x, y, % xProcent + 1, % yProcent, % xEnd, % yEnd, *5 *TransBlack %ramaScris%
+		if(ErrorLevel = 0)
+			return "rama.png"
+	ImageSearch, x, y, % xProcent + 1, % yProcent, % xEnd, % yEnd, *5 *TransBlack %focScris%
+		if(ErrorLevel = 0)
+			return A_WorkingDir . "\Misc\foc_shop.png"
+	return "nedeterminat"
+}
+dropItm(x, y){
+	MouseMove,x,y
+	Sleep,200
+	Click,1
+	Sleep,200
+	MouseMove, 5, 5
+	Sleep, 200
+	Click,1
+	Sleep, 200
+	ImageSearch,xd, yd , % rez["da"][1], % rez["da"][2], % rez["da"][3], % rez["da"][4], *20 da.png
+	MouseMove, % xd + rez["offsetDropItm"][2], % yd + rez["offsetDropItm"][2]
+	Sleep,200
+	Click,1
+	Sleep,200
+}
+
+switchInv(){
+
+	ImageSearch, x, y, % rez["inventar"][1], % rez["inventar"][2], % rez["inventar"][3], % rez["inventar"][4], *5 %slot1%
+	if(ErrorLevel = 0){
+		xInv := x
+		yInv := y
+	}
+	ImageSearch, x, y, % rez["inventar"][1], % rez["inventar"][2], % rez["inventar"][3], % rez["inventar"][4], *5 %slot2%
+	if(ErrorLevel = 0){
+		xInv := x
+		yInv := y
+	}
+	MouseMove,xInv,yInv
+	Sleep,200
+	Click,1
+	Sleep,200
+	MouseMove,0,0
+	Sleep,200
+}
+dropType(count,type){
+	index := 0
+	while(index < count){
+		ImageSearch, x, y, % rez["inventar"][1], % rez["inventar"][2], % rez["inventar"][3], % rez["inventar"][4], *5 *TransBlack %type%
+			if(ErrorLevel = 1){
+				switchInv()
+				ImageSearch, x, y, % rez["inventar"][1], % rez["inventar"][2], % rez["inventar"][3], % rez["inventar"][4], *5 *TransBlack %type%
+				if(ErrorLevel = 1)
+					break
+				continue
+			}
+		dropItm(x, y)
+		index++
+	}
+}
+inchideChat(){
+	ImageSearch, x, y, % rez["chat"][1], % rez["chat"][2], % rez["chat"][3], % rez["chat"][4], *5 %inchide%
+	if(ErrorLevel = 0){
+		MouseMove,x,y
+		Sleep,200
+		Click,1
+		Sleep,200
+	}
+
+}
+sendHold(key,time){
+	send, {%key% down}
+	sleep, %time%
+	send, {%key% up}
+}
+
+initSpin(){
+	MouseMove,0,0
+	loop,20{
+		sendHold("f",100)
+	}
+	loop,20{
+		sendHold("g",100)
+	}
+}
+
+spin(){
+	MouseMove,0,0
+	loop, 20{
+		sendHold("t",100)
+	}
+	loop, 20{
+		sendHold("f",100)
+	}
+	loop, 25{
+		sendHold("e",300)
+	}
+	loop,20{
+		sendHold("g",100)
+	}
+	Sleep,200
+}
+writeCoordRez(section,x1,x2=-1,x3=-1,x4=-1){
+	tempArray := []
+	tempArray.push(x1)
+	if(x2 != -1)
+		tempArray.push(x2)
+	if(x3 != -1)
+		tempArray.push(x3)
+	if(x4 != -1)
+		tempArray.push(x4)
+
+	for index, keyValue in tempArray{
+		keyName := "x" . index
+		IniWrite,%keyValue%,DepozitFishRez.ini,%section%,%keyName%
+	}
+
+}
+readIniFileKeys(section,fileName,array){ ; parametrul imagine stabileste daca pregateste vectorul pentru adresa imaginilor (de peste)
+	charSection := section ; sectiunea fara []
+	section := "[" . section . "]"
+	loop{
+		FileReadLine, string, %fileName%, %A_Index%
+		    if(InStr(string,"[")){
+				if(string = section){
+					index := A_Index + 1
+					loop{
+						FileReadLine, string, %fileName%, %index%
+							if(InStr(string,"[") or ErrorLevel = 1)
+								return
+							eqPos := InStr(string,"=")
+							string := SubStr(string,1,eqPos-1)
+								array.push(string)
+						index++
+					}
+				}
+			}
+	}
+}
+;***Functi Gui
+
+writeControlStatus(value,file,section,key){
+	IniWrite,%value%,%file%,%section%,%key%
+}
+
+initControlStatus(array,section){
+	for index, element in array{
+		IniRead, var,DepozitFishGui.ini,%section%,%element%
+		GuiControl,,%element%,%var%
+	}
+}
